@@ -1,0 +1,38 @@
+# AgentBeats Scenario Configuration
+# SQL Benchmark Tournament between two SQL-generating agents
+
+[scenario]
+name = "SQL Benchmark Tournament"
+description = "Evaluates SQL agents on correctness, efficiency, safety, and best practices using Text-2-SQL Agent 7-dimensional scoring"
+
+[green]
+name = "text-2-sql-agent-green"
+# GHCR image for AgentBeats platform:
+image = "ghcr.io/ashcastelinocs124/text-2-sql-agent-green:latest"
+# Local development (uncomment to use):
+# command = "python entrypoint_green.py --port 8001 --dialect sqlite --scorer-preset default"
+
+[[purple]]
+name = "text-2-sql-gemini-agent"
+role = "sql_agent_1"
+# GHCR image for AgentBeats platform:
+image = "ghcr.io/ashcastelinocs124/text-2-sql-agent-purple:latest"
+# Local development (uncomment to use):
+# command = "python entrypoint_purple.py --port 8080 --llm gemini --name 'Gemini SQL Agent'"
+
+[[purple]]
+name = "open-ai-text-2sql"
+role = "sql_agent_2"
+# GHCR image for AgentBeats platform:
+image = "ghcr.io/ashcastelinocs124/text-2-sql-agent-purple:latest"
+# Local development (uncomment to use):
+# command = "python entrypoint_purple.py --port 8081 --llm openai --name 'OpenAI SQL Agent'"
+
+[config]
+difficulty = ["easy", "medium"]
+task_count = 5
+scorer_preset = "default"
+dialect = "sqlite"
+same_tasks = true
+parallel_evaluation = true
+

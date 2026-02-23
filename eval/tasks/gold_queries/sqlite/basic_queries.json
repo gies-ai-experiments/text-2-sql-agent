@@ -1,0 +1,404 @@
+[
+  {
+    "id": "sqlite_simple_select",
+    "question": "Get all customer records with a limit of 10",
+    "dialect": "sqlite",
+    "difficulty": "easy",
+    "gold_sql": "SELECT * FROM customers LIMIT 10",
+    "tags": ["select", "basic"],
+    "expected_results": [
+      {"id": 1, "name": "Alice Johnson", "email": "alice@example.com", "city": "New York", "phone": "555-0101"},
+      {"id": 2, "name": "Bob Smith", "email": "bob@example.com", "city": "Los Angeles", "phone": "555-0102"},
+      {"id": 3, "name": "Charlie Brown", "email": "charlie@example.com", "city": "Chicago", "phone": "555-0103"},
+      {"id": 4, "name": "Diana Ross", "email": "diana@example.com", "city": "New York", "phone": "555-0104"},
+      {"id": 5, "name": "Edward Kim", "email": "edward@example.com", "city": "San Francisco", "phone": null}
+    ],
+    "expected_row_count": 5,
+    "expected_columns": ["id", "name", "email", "city", "phone", "created_at"]
+  },
+  {
+    "id": "sqlite_count",
+    "question": "Count the total number of customers in the database",
+    "dialect": "sqlite",
+    "difficulty": "easy",
+    "gold_sql": "SELECT COUNT(*) as total FROM customers",
+    "tags": ["aggregation", "count"],
+    "expected_results": [{"total": 5}],
+    "expected_row_count": 1,
+    "expected_columns": ["total"]
+  },
+  {
+    "id": "sqlite_where_filter",
+    "question": "Find all customers who live in New York",
+    "dialect": "sqlite",
+    "difficulty": "easy",
+    "gold_sql": "SELECT * FROM customers WHERE city = 'New York'",
+    "tags": ["where", "filter"],
+    "expected_results": [
+      {"id": 1, "name": "Alice Johnson", "city": "New York"},
+      {"id": 4, "name": "Diana Ross", "city": "New York"}
+    ],
+    "expected_row_count": 2,
+    "expected_columns": ["id", "name", "email", "city", "phone", "created_at"]
+  },
+  {
+    "id": "sqlite_join",
+    "question": "Get customer names along with their order dates and totals",
+    "dialect": "sqlite",
+    "difficulty": "medium",
+    "gold_sql": "SELECT c.name, o.order_date, o.total FROM customers c JOIN orders o ON c.id = o.customer_id",
+    "tags": ["join", "inner_join"],
+    "expected_results": [
+      {"name": "Alice Johnson", "order_date": "2024-01-15", "total": 150.0},
+      {"name": "Alice Johnson", "order_date": "2024-02-20", "total": 75.5},
+      {"name": "Bob Smith", "order_date": "2024-01-25", "total": 200.0},
+      {"name": "Charlie Brown", "order_date": "2024-03-01", "total": 50.0},
+      {"name": "Diana Ross", "order_date": "2024-03-10", "total": 1200.0}
+    ],
+    "expected_row_count": 5,
+    "expected_columns": ["name", "order_date", "total"]
+  },
+  {
+    "id": "sqlite_group_by",
+    "question": "Count the number of customers in each city, ordered by count descending",
+    "dialect": "sqlite",
+    "difficulty": "medium",
+    "gold_sql": "SELECT city, COUNT(*) as customer_count FROM customers GROUP BY city ORDER BY customer_count DESC",
+    "tags": ["aggregation", "group_by"],
+    "expected_results": [
+      {"city": "New York", "customer_count": 2},
+      {"city": "Chicago", "customer_count": 1},
+      {"city": "Los Angeles", "customer_count": 1},
+      {"city": "San Francisco", "customer_count": 1}
+    ],
+    "expected_row_count": 4,
+    "expected_columns": ["city", "customer_count"]
+  },
+  {
+    "id": "sqlite_subquery",
+    "question": "Find customers who have placed orders with a total greater than 100",
+    "dialect": "sqlite",
+    "difficulty": "medium",
+    "gold_sql": "SELECT * FROM customers WHERE id IN (SELECT customer_id FROM orders WHERE total > 100)",
+    "tags": ["subquery", "in"],
+    "expected_results": [
+      {"id": 1, "name": "Alice Johnson"},
+      {"id": 2, "name": "Bob Smith"},
+      {"id": 4, "name": "Diana Ross"}
+    ],
+    "expected_row_count": 3,
+    "expected_columns": ["id", "name", "email", "city", "phone", "created_at"]
+  },
+  {
+    "id": "sqlite_left_join",
+    "question": "Get all customers and their orders (including customers with no orders)",
+    "dialect": "sqlite",
+    "difficulty": "medium",
+    "gold_sql": "SELECT c.name, o.total FROM customers c LEFT JOIN orders o ON c.id = o.customer_id",
+    "tags": ["join", "left_join"],
+    "expected_results": [
+      {"name": "Alice Johnson", "total": 150.0},
+      {"name": "Alice Johnson", "total": 75.5},
+      {"name": "Bob Smith", "total": 200.0},
+      {"name": "Charlie Brown", "total": 50.0},
+      {"name": "Diana Ross", "total": 1200.0},
+      {"name": "Edward Kim", "total": null}
+    ],
+    "expected_row_count": 6,
+    "expected_columns": ["name", "total"]
+  },
+  {
+    "id": "sqlite_aggregate_sum",
+    "question": "Calculate the total revenue from all orders",
+    "dialect": "sqlite",
+    "difficulty": "easy",
+    "gold_sql": "SELECT SUM(total) as total_revenue FROM orders",
+    "tags": ["aggregation", "sum"],
+    "expected_results": [{"total_revenue": 1675.5}],
+    "expected_row_count": 1,
+    "expected_columns": ["total_revenue"]
+  },
+  {
+    "id": "sqlite_aggregate_avg",
+    "question": "Calculate the average order value",
+    "dialect": "sqlite",
+    "difficulty": "easy",
+    "gold_sql": "SELECT AVG(total) as avg_order_value FROM orders",
+    "tags": ["aggregation", "avg"],
+    "expected_results": [{"avg_order_value": 335.1}],
+    "expected_row_count": 1,
+    "expected_columns": ["avg_order_value"]
+  },
+  {
+    "id": "sqlite_case_when",
+    "question": "Categorize orders as 'high', 'medium', or 'low' based on total amount",
+    "dialect": "sqlite",
+    "difficulty": "medium",
+    "gold_sql": "SELECT id, total, CASE WHEN total > 500 THEN 'high' WHEN total > 100 THEN 'medium' ELSE 'low' END as category FROM orders",
+    "tags": ["case", "conditional"],
+    "expected_results": [
+      {"id": 1, "total": 150.0, "category": "medium"},
+      {"id": 2, "total": 75.5, "category": "low"},
+      {"id": 3, "total": 200.0, "category": "medium"},
+      {"id": 4, "total": 50.0, "category": "low"},
+      {"id": 5, "total": 1200.0, "category": "high"}
+    ],
+    "expected_row_count": 5,
+    "expected_columns": ["id", "total", "category"]
+  },
+  {
+    "id": "sqlite_string_functions",
+    "question": "Get customer names in uppercase along with the length of their names",
+    "dialect": "sqlite",
+    "difficulty": "easy",
+    "gold_sql": "SELECT UPPER(name) as upper_name, LENGTH(name) as name_length FROM customers",
+    "tags": ["string", "functions"],
+    "expected_results": [
+      {"upper_name": "ALICE JOHNSON", "name_length": 13},
+      {"upper_name": "BOB SMITH", "name_length": 9},
+      {"upper_name": "CHARLIE BROWN", "name_length": 13},
+      {"upper_name": "DIANA ROSS", "name_length": 10},
+      {"upper_name": "EDWARD KIM", "name_length": 10}
+    ],
+    "expected_row_count": 5,
+    "expected_columns": ["upper_name", "name_length"]
+  },
+  {
+    "id": "sqlite_null_handling",
+    "question": "Get customer names and phone numbers, showing 'N/A' for missing phone numbers",
+    "dialect": "sqlite",
+    "difficulty": "easy",
+    "gold_sql": "SELECT name, COALESCE(phone, 'N/A') as phone FROM customers",
+    "tags": ["null", "coalesce"],
+    "expected_results": [
+      {"name": "Alice Johnson", "phone": "555-0101"},
+      {"name": "Bob Smith", "phone": "555-0102"},
+      {"name": "Charlie Brown", "phone": "555-0103"},
+      {"name": "Diana Ross", "phone": "555-0104"},
+      {"name": "Edward Kim", "phone": "N/A"}
+    ],
+    "expected_row_count": 5,
+    "expected_columns": ["name", "phone"]
+  },
+  {
+    "id": "sqlite_distinct",
+    "question": "Get a list of all unique cities where customers live",
+    "dialect": "sqlite",
+    "difficulty": "easy",
+    "gold_sql": "SELECT DISTINCT city FROM customers ORDER BY city",
+    "tags": ["distinct", "unique"],
+    "expected_results": [
+      {"city": "Chicago"},
+      {"city": "Los Angeles"},
+      {"city": "New York"},
+      {"city": "San Francisco"}
+    ],
+    "expected_row_count": 4,
+    "expected_columns": ["city"]
+  },
+  {
+    "id": "sqlite_order_limit",
+    "question": "Get the 3 most recent orders based on order date",
+    "dialect": "sqlite",
+    "difficulty": "easy",
+    "gold_sql": "SELECT * FROM orders ORDER BY order_date DESC LIMIT 3",
+    "tags": ["order", "limit", "sort"],
+    "expected_results": [
+      {"id": 5, "order_date": "2024-03-10", "total": 1200.0},
+      {"id": 4, "order_date": "2024-03-01", "total": 50.0},
+      {"id": 2, "order_date": "2024-02-20", "total": 75.5}
+    ],
+    "expected_row_count": 3,
+    "expected_columns": ["id", "customer_id", "order_date", "total", "status"]
+  },
+  {
+    "id": "sqlite_between",
+    "question": "Find orders with totals between 50 and 200 (inclusive)",
+    "dialect": "sqlite",
+    "difficulty": "easy",
+    "gold_sql": "SELECT * FROM orders WHERE total BETWEEN 50 AND 200",
+    "tags": ["between", "filter"],
+    "expected_results": [
+      {"id": 1, "total": 150.0},
+      {"id": 2, "total": 75.5},
+      {"id": 3, "total": 200.0},
+      {"id": 4, "total": 50.0}
+    ],
+    "expected_row_count": 4,
+    "expected_columns": ["id", "customer_id", "order_date", "total", "status"]
+  },
+  {
+    "id": "sqlite_having",
+    "question": "Find cities with more than 1 customer",
+    "dialect": "sqlite",
+    "difficulty": "medium",
+    "gold_sql": "SELECT city, COUNT(*) as customer_count FROM customers GROUP BY city HAVING COUNT(*) > 1",
+    "tags": ["having", "group_by", "aggregation"],
+    "expected_results": [
+      {"city": "New York", "customer_count": 2}
+    ],
+    "expected_row_count": 1,
+    "expected_columns": ["city", "customer_count"]
+  },
+  {
+    "id": "sqlite_multiple_conditions",
+    "question": "Find customers in New York or Los Angeles with names starting with 'A' or 'B'",
+    "dialect": "sqlite",
+    "difficulty": "medium",
+    "gold_sql": "SELECT * FROM customers WHERE city IN ('New York', 'Los Angeles') AND (name LIKE 'A%' OR name LIKE 'B%')",
+    "tags": ["where", "in", "like", "and", "or"],
+    "expected_results": [
+      {"id": 1, "name": "Alice Johnson", "city": "New York"},
+      {"id": 2, "name": "Bob Smith", "city": "Los Angeles"}
+    ],
+    "expected_row_count": 2,
+    "expected_columns": ["id", "name", "email", "city", "phone", "created_at"]
+  },
+  {
+    "id": "sqlite_window_rank",
+    "question": "Rank customers by their total spending across all orders",
+    "dialect": "sqlite",
+    "difficulty": "hard",
+    "gold_sql": "SELECT customer_id, total_spent, ROW_NUMBER() OVER (ORDER BY total_spent DESC) as rank FROM (SELECT customer_id, SUM(total) as total_spent FROM orders GROUP BY customer_id)",
+    "tags": ["window", "rank", "aggregation"],
+    "expected_results": [
+      {"customer_id": 4, "total_spent": 1200.0, "rank": 1},
+      {"customer_id": 1, "total_spent": 225.5, "rank": 2},
+      {"customer_id": 2, "total_spent": 200.0, "rank": 3},
+      {"customer_id": 3, "total_spent": 50.0, "rank": 4}
+    ],
+    "expected_row_count": 4,
+    "expected_columns": ["customer_id", "total_spent", "rank"]
+  },
+  {
+    "id": "sqlite_cte",
+    "question": "Using a CTE, find the top 3 customers by total spending",
+    "dialect": "sqlite",
+    "difficulty": "hard",
+    "gold_sql": "WITH customer_totals AS (SELECT customer_id, SUM(total) as total_spent FROM orders GROUP BY customer_id) SELECT c.name, ct.total_spent FROM customers c JOIN customer_totals ct ON c.id = ct.customer_id ORDER BY ct.total_spent DESC LIMIT 3",
+    "tags": ["cte", "with", "aggregation"],
+    "expected_results": [
+      {"name": "Diana Ross", "total_spent": 1200.0},
+      {"name": "Alice Johnson", "total_spent": 225.5},
+      {"name": "Bob Smith", "total_spent": 200.0}
+    ],
+    "expected_row_count": 3,
+    "expected_columns": ["name", "total_spent"]
+  },
+  {
+    "id": "sqlite_window_running_total",
+    "question": "Calculate a running total of order amounts ordered by date",
+    "dialect": "sqlite",
+    "difficulty": "hard",
+    "gold_sql": "SELECT id, order_date, total, SUM(total) OVER (ORDER BY order_date) as running_total FROM orders",
+    "tags": ["window", "running_total"],
+    "expected_results": [
+      {"id": 1, "order_date": "2024-01-15", "total": 150.0, "running_total": 150.0},
+      {"id": 3, "order_date": "2024-01-25", "total": 200.0, "running_total": 350.0},
+      {"id": 2, "order_date": "2024-02-20", "total": 75.5, "running_total": 425.5},
+      {"id": 4, "order_date": "2024-03-01", "total": 50.0, "running_total": 475.5},
+      {"id": 5, "order_date": "2024-03-10", "total": 1200.0, "running_total": 1675.5}
+    ],
+    "expected_row_count": 5,
+    "expected_columns": ["id", "order_date", "total", "running_total"]
+  },
+  {
+    "id": "sqlite_multiple_ctes",
+    "question": "Find customers whose total spending is above the average customer spending",
+    "dialect": "sqlite",
+    "difficulty": "hard",
+    "gold_sql": "WITH customer_totals AS (SELECT customer_id, SUM(total) as total_spent FROM orders GROUP BY customer_id), avg_spending AS (SELECT AVG(total_spent) as avg_total FROM customer_totals) SELECT c.name, ct.total_spent FROM customers c JOIN customer_totals ct ON c.id = ct.customer_id WHERE ct.total_spent > (SELECT avg_total FROM avg_spending)",
+    "tags": ["cte", "multiple_cte", "subquery"],
+    "expected_results": [
+      {"name": "Diana Ross", "total_spent": 1200.0}
+    ],
+    "expected_row_count": 1,
+    "expected_columns": ["name", "total_spent"]
+  },
+  {
+    "id": "sqlite_self_join",
+    "question": "Find pairs of customers who live in the same city",
+    "dialect": "sqlite",
+    "difficulty": "hard",
+    "gold_sql": "SELECT c1.name as customer1, c2.name as customer2, c1.city FROM customers c1 JOIN customers c2 ON c1.city = c2.city AND c1.id < c2.id",
+    "tags": ["self_join", "join"],
+    "expected_results": [
+      {"customer1": "Alice Johnson", "customer2": "Diana Ross", "city": "New York"}
+    ],
+    "expected_row_count": 1,
+    "expected_columns": ["customer1", "customer2", "city"]
+  },
+  {
+    "id": "sqlite_correlated_subquery",
+    "question": "Find customers whose largest order is above 100",
+    "dialect": "sqlite",
+    "difficulty": "hard",
+    "gold_sql": "SELECT c.name, (SELECT MAX(o.total) FROM orders o WHERE o.customer_id = c.id) as max_order FROM customers c WHERE (SELECT MAX(o.total) FROM orders o WHERE o.customer_id = c.id) > 100",
+    "tags": ["correlated_subquery", "subquery"],
+    "expected_results": [
+      {"name": "Alice Johnson", "max_order": 150.0},
+      {"name": "Bob Smith", "max_order": 200.0},
+      {"name": "Diana Ross", "max_order": 1200.0}
+    ],
+    "expected_row_count": 3,
+    "expected_columns": ["name", "max_order"]
+  },
+  {
+    "id": "sqlite_enterprise_cohort",
+    "question": "Analyze customer cohorts: group customers by their first order month and calculate retention metrics",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH first_orders AS (SELECT customer_id, MIN(order_date) as first_order_date, strftime('%Y-%m', MIN(order_date)) as cohort_month FROM orders GROUP BY customer_id), order_months AS (SELECT o.customer_id, strftime('%Y-%m', o.order_date) as order_month FROM orders o) SELECT f.cohort_month, COUNT(DISTINCT f.customer_id) as cohort_size, COUNT(DISTINCT CASE WHEN om.order_month = f.cohort_month THEN f.customer_id END) as month_0_active FROM first_orders f LEFT JOIN order_months om ON f.customer_id = om.customer_id GROUP BY f.cohort_month ORDER BY f.cohort_month",
+    "tags": ["enterprise", "cohort", "analytics", "cte"],
+    "expected_results": [
+      {"cohort_month": "2024-01", "cohort_size": 2, "month_0_active": 2},
+      {"cohort_month": "2024-03", "cohort_size": 2, "month_0_active": 2}
+    ],
+    "expected_row_count": 2,
+    "expected_columns": ["cohort_month", "cohort_size", "month_0_active"]
+  },
+  {
+    "id": "sqlite_enterprise_rfm",
+    "question": "Calculate RFM (Recency, Frequency, Monetary) scores for each customer",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH customer_metrics AS (SELECT customer_id, MAX(order_date) as last_order, COUNT(*) as frequency, SUM(total) as monetary FROM orders GROUP BY customer_id) SELECT c.name, cm.last_order, cm.frequency, cm.monetary, CASE WHEN julianday('now') - julianday(cm.last_order) <= 30 THEN 3 WHEN julianday('now') - julianday(cm.last_order) <= 90 THEN 2 ELSE 1 END as recency_score FROM customers c JOIN customer_metrics cm ON c.id = cm.customer_id ORDER BY cm.monetary DESC",
+    "tags": ["enterprise", "rfm", "analytics", "cte"],
+    "expected_results": [
+      {"name": "Diana Ross", "frequency": 1, "monetary": 1200.0, "recency_score": 1},
+      {"name": "Alice Johnson", "frequency": 2, "monetary": 225.5, "recency_score": 1},
+      {"name": "Bob Smith", "frequency": 1, "monetary": 200.0, "recency_score": 1},
+      {"name": "Charlie Brown", "frequency": 1, "monetary": 50.0, "recency_score": 1}
+    ],
+    "expected_row_count": 4,
+    "expected_columns": ["name", "last_order", "frequency", "monetary", "recency_score"]
+  },
+  {
+    "id": "sqlite_enterprise_percentile",
+    "question": "Find the median order value using window functions",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH ranked AS (SELECT total, ROW_NUMBER() OVER (ORDER BY total) as rn, COUNT(*) OVER () as cnt FROM orders) SELECT AVG(total) as median_value FROM ranked WHERE rn IN ((cnt + 1) / 2, (cnt + 2) / 2)",
+    "tags": ["enterprise", "percentile", "median", "window"],
+    "expected_results": [
+      {"median_value": 150.0}
+    ],
+    "expected_row_count": 1,
+    "expected_columns": ["median_value"]
+  },
+  {
+    "id": "sqlite_enterprise_yoy",
+    "question": "Calculate year-over-year growth rate for monthly revenue",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH monthly_revenue AS (SELECT strftime('%Y', order_date) as year, strftime('%m', order_date) as month, SUM(total) as revenue FROM orders GROUP BY strftime('%Y', order_date), strftime('%m', order_date)) SELECT year, month, revenue, LAG(revenue) OVER (PARTITION BY month ORDER BY year) as prev_year_revenue, CASE WHEN LAG(revenue) OVER (PARTITION BY month ORDER BY year) > 0 THEN ROUND((revenue - LAG(revenue) OVER (PARTITION BY month ORDER BY year)) * 100.0 / LAG(revenue) OVER (PARTITION BY month ORDER BY year), 2) ELSE NULL END as yoy_growth_pct FROM monthly_revenue ORDER BY year, month",
+    "tags": ["enterprise", "yoy", "growth", "window", "analytics"],
+    "expected_results": [
+      {"year": "2024", "month": "01", "revenue": 350.0, "prev_year_revenue": null, "yoy_growth_pct": null},
+      {"year": "2024", "month": "02", "revenue": 75.5, "prev_year_revenue": null, "yoy_growth_pct": null},
+      {"year": "2024", "month": "03", "revenue": 1250.0, "prev_year_revenue": null, "yoy_growth_pct": null}
+    ],
+    "expected_row_count": 3,
+    "expected_columns": ["year", "month", "revenue", "prev_year_revenue", "yoy_growth_pct"]
+  }
+]

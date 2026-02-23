@@ -1,0 +1,35 @@
+# AgentX Sample Purple Agent - SQL Generator
+#
+# Build: docker build --platform linux/amd64 -f docker/Dockerfile.purple -t agentx-purple .
+# Run: docker run -p 8080:8080 -e GOOGLE_API_KEY=xxx agentx-purple --host 0.0.0.0 --port 8080 --llm gemini
+#
+# For AgentBeats: Accepts --host, --port, --card-url arguments
+
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src
+
+WORKDIR /app
+
+# Copy requirements
+COPY requirements-purple.txt .
+RUN pip install --no-cache-dir -r requirements-purple.txt
+
+# Copy application code
+COPY a2a/purple_agent/ ./a2a/purple_agent/
+COPY a2a/__init__.py ./a2a/
+COPY a2a/health.py ./a2a/
+COPY a2a/resilience.py ./a2a/
+COPY entrypoint_purple.py .
+
+# Create non-root user
+RUN useradd -m -u 1000 agentx && chown -R agentx:agentx /app
+USER agentx
+
+EXPOSE 8080
+
+# AgentBeats-compatible entrypoint
+ENTRYPOINT ["python", "entrypoint_purple.py"]
+CMD ["--host", "0.0.0.0", "--port", "8080", "--llm", "gemini"]

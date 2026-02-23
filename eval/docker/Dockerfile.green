@@ -1,0 +1,43 @@
+# AgentX SQL Benchmark - Green Agent
+#
+# Build: docker build --platform linux/amd64 -f docker/Dockerfile.green -t agentx-green .
+# Run: docker run -p 8001:8001 agentx-green --host 0.0.0.0 --port 8001
+#
+# For AgentBeats: Accepts --host, --port, --card-url arguments
+
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements-green.txt .
+RUN pip install --no-cache-dir -r requirements-green.txt
+
+# Copy application code
+COPY src/ ./src/
+COPY evaluation/ ./evaluation/
+COPY agentx_a2a/ ./agentx_a2a/
+COPY tasks/ ./tasks/
+COPY entrypoint_green.py .
+COPY entrypoint_green_a2a.py .
+COPY a2a_executor_green.py .
+
+# Create non-root user
+RUN useradd -m -u 1000 agentx && chown -R agentx:agentx /app
+USER agentx
+
+EXPOSE 8001
+
+# AgentBeats-compatible entrypoint (A2A protocol)
+ENTRYPOINT ["python", "entrypoint_green_a2a.py"]
+CMD ["--host", "0.0.0.0", "--port", "9009"]

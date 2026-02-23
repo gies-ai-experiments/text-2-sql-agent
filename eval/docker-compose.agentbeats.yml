@@ -1,0 +1,79 @@
+# Text-2-SQL Agent AgentBeats Deployment
+#
+# Usage:
+#   docker-compose -f docker-compose.agentbeats.yml up -d
+#
+# Environment variables (create .env file or export):
+#   GOOGLE_API_KEY=your-gemini-api-key
+#   OPENAI_API_KEY=your-openai-api-key (optional)
+
+services:
+  # Green Agent - SQL Benchmark Evaluator
+  green-agent:
+    image: keshavdalmia10/agentx-green:latest
+    # build:
+    #   context: .
+    #   dockerfile: docker/Dockerfile.green
+    container_name: agentx-green
+    ports:
+      - "8001:8001"
+    command: ["--host", "0.0.0.0", "--port", "8001", "--dialect", "sqlite", "--scorer-preset", "default"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - agentx-network
+    restart: unless-stopped
+
+  # Purple Agent 1 - Gemini SQL Generator
+  purple-agent-gemini:
+    image: keshavdalmia10/agentx-purple:latest
+    # build:
+    #   context: .
+    #   dockerfile: docker/Dockerfile.purple
+    container_name: agentx-purple-gemini
+    ports:
+      - "8080:8080"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    command: ["--host", "0.0.0.0", "--port", "8080", "--llm", "gemini", "--name", "Gemini SQL Agent"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - agentx-network
+    restart: unless-stopped
+
+  # Purple Agent 2 - OpenAI SQL Generator (optional)
+  purple-agent-openai:
+    image: keshavdalmia10/agentx-purple:latest
+    # build:
+    #   context: .
+    #   dockerfile: docker/Dockerfile.purple
+    container_name: agentx-purple-openai
+    ports:
+      - "8081:8081"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    command: ["--host", "0.0.0.0", "--port", "8081", "--llm", "openai", "--name", "OpenAI SQL Agent"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - agentx-network
+    profiles:
+      - with-openai
+    restart: unless-stopped
+
+networks:
+  agentx-network:
+    driver: bridge

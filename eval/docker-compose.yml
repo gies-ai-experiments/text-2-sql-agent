@@ -1,0 +1,151 @@
+# Text-2-SQL Agent SQL Benchmark - Docker Compose
+#
+# Usage:
+#   # Start with SQLite (default, zero setup)
+#   docker-compose up agentx
+#
+#   # Start with PostgreSQL
+#   docker-compose up agentx-postgres postgres
+#
+#   # Run all tests
+#   docker-compose run --rm test
+#
+#   # Stop all services
+#   docker-compose down
+
+version: '3.8'
+
+services:
+  # =============================================================================
+  # MAIN SERVICE: Text-2-SQL Agent A2A Server (SQLite)
+  # =============================================================================
+  agentx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentx-benchmark:latest
+    container_name: agentx-server
+    ports:
+      - "5000:5000"
+    environment:
+      - DIALECT=sqlite
+      - PORT=5000
+      - HOST=0.0.0.0
+    volumes:
+      - ./tasks:/app/tasks:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # =============================================================================
+  # POSTGRESQL VARIANT
+  # =============================================================================
+  agentx-postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentx-benchmark:latest
+    container_name: agentx-server-postgres
+    ports:
+      - "5001:5000"
+    environment:
+      - DIALECT=postgresql
+      - PORT=5000
+      - HOST=0.0.0.0
+      - PG_CONNECTION_STRING=postgresql://agentx:agentx_password@postgres:5432/agentx_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: agentx-postgres-db
+    environment:
+      - POSTGRES_USER=agentx
+      - POSTGRES_PASSWORD=agentx_password
+      - POSTGRES_DB=agentx_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentx -d agentx_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # =============================================================================
+  # DUCKDB VARIANT (Analytics)
+  # =============================================================================
+  agentx-duckdb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentx-benchmark:latest
+    container_name: agentx-server-duckdb
+    ports:
+      - "5002:5000"
+    environment:
+      - DIALECT=duckdb
+      - PORT=5000
+      - HOST=0.0.0.0
+    volumes:
+      - duckdb_data:/app/data
+      - ./tasks:/app/tasks:ro
+    restart: unless-stopped
+
+  # =============================================================================
+  # TEST RUNNER
+  # =============================================================================
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentx-benchmark:latest
+    container_name: agentx-test
+    command: >
+      sh -c "
+        echo '=== Running Multi-Dialect Tests ===' &&
+        python test_multi_dialect.py &&
+        echo '=== Running Enhanced Scoring Tests ===' &&
+        python test_enhanced_scoring.py &&
+        echo '=== Running A2A Tests ===' &&
+        python test_a2a.py &&
+        echo '=== All Tests Passed! ==='
+      "
+    volumes:
+      - ./tasks:/app/tasks:ro
+
+  # =============================================================================
+  # BENCHMARK RUNNER (for batch evaluation)
+  # =============================================================================
+  benchmark:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentx-benchmark:latest
+    container_name: agentx-benchmark-runner
+    command: >
+      python -c "
+      from a2a import A2AClient
+      client = A2AClient('http://agentx:5000')
+      print('Benchmark runner ready. Connect your agent to http://localhost:5000')
+      "
+    depends_on:
+      agentx:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  duckdb_data:
+
+networks:
+  default:
+    name: agentx-network

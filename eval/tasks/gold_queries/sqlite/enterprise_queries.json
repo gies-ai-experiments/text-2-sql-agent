@@ -1,0 +1,312 @@
+[
+  {
+    "id": "ent_star_schema_basic",
+    "question": "Query the star schema to get total sales by product category and store region",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "SELECT dp.category, ds.region, SUM(sf.quantity * sf.unit_price) as total_sales FROM sales_fact sf JOIN dim_product dp ON sf.product_id = dp.product_id JOIN dim_store ds ON sf.store_id = ds.store_id GROUP BY dp.category, ds.region ORDER BY total_sales DESC",
+    "tags": ["star_schema", "fact_table", "dimension", "aggregation"],
+    "schema_required": "enterprise",
+    "expected_columns": ["category", "region", "total_sales"]
+  },
+  {
+    "id": "ent_star_schema_time",
+    "question": "Analyze quarterly sales trends by product category with year-over-year comparison",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH quarterly_sales AS (SELECT dd.year, dd.quarter, dp.category, SUM(sf.quantity * sf.unit_price) as sales FROM sales_fact sf JOIN dim_date dd ON sf.date_id = dd.date_id JOIN dim_product dp ON sf.product_id = dp.product_id GROUP BY dd.year, dd.quarter, dp.category) SELECT curr.year, curr.quarter, curr.category, curr.sales as current_sales, prev.sales as prev_year_sales, ROUND((curr.sales - COALESCE(prev.sales, 0)) * 100.0 / NULLIF(prev.sales, 0), 2) as yoy_growth FROM quarterly_sales curr LEFT JOIN quarterly_sales prev ON curr.category = prev.category AND curr.quarter = prev.quarter AND curr.year = prev.year + 1 ORDER BY curr.year, curr.quarter, curr.category",
+    "tags": ["star_schema", "yoy", "time_series", "cte"],
+    "schema_required": "enterprise",
+    "expected_columns": ["year", "quarter", "category", "current_sales", "prev_year_sales", "yoy_growth"]
+  },
+  {
+    "id": "ent_scd_type2_current",
+    "question": "Get the current version of all customer records from a Type 2 slowly changing dimension",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "SELECT customer_id, customer_name, email, segment, valid_from, valid_to FROM dim_customer_scd WHERE is_current = 1 ORDER BY customer_id",
+    "tags": ["scd", "scd_type2", "dimension", "current_record"],
+    "schema_required": "enterprise",
+    "expected_columns": ["customer_id", "customer_name", "email", "segment", "valid_from", "valid_to"]
+  },
+  {
+    "id": "ent_scd_type2_history",
+    "question": "Track the complete history of changes for a specific customer in SCD Type 2",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "SELECT surrogate_key, customer_id, customer_name, email, segment, valid_from, valid_to, is_current, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY valid_from) as version_number FROM dim_customer_scd WHERE customer_id = 1001 ORDER BY valid_from",
+    "tags": ["scd", "scd_type2", "history", "window"],
+    "schema_required": "enterprise",
+    "expected_columns": ["surrogate_key", "customer_id", "customer_name", "email", "segment", "valid_from", "valid_to", "is_current", "version_number"]
+  },
+  {
+    "id": "ent_scd_point_in_time",
+    "question": "Get customer data as it existed on a specific historical date (point-in-time query)",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "SELECT customer_id, customer_name, segment, valid_from, valid_to FROM dim_customer_scd WHERE valid_from <= '2024-06-15' AND (valid_to > '2024-06-15' OR valid_to IS NULL) ORDER BY customer_id",
+    "tags": ["scd", "point_in_time", "temporal", "history"],
+    "schema_required": "enterprise",
+    "expected_columns": ["customer_id", "customer_name", "segment", "valid_from", "valid_to"]
+  },
+  {
+    "id": "ent_window_running_total_partition",
+    "question": "Calculate running total of sales partitioned by store with daily granularity",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "SELECT sf.store_id, ds.store_name, dd.full_date, SUM(sf.quantity * sf.unit_price) as daily_sales, SUM(SUM(sf.quantity * sf.unit_price)) OVER (PARTITION BY sf.store_id ORDER BY dd.full_date ROWS UNBOUNDED PRECEDING) as running_total FROM sales_fact sf JOIN dim_store ds ON sf.store_id = ds.store_id JOIN dim_date dd ON sf.date_id = dd.date_id GROUP BY sf.store_id, ds.store_name, dd.full_date ORDER BY sf.store_id, dd.full_date",
+    "tags": ["window", "running_total", "partition", "aggregation"],
+    "schema_required": "enterprise",
+    "expected_columns": ["store_id", "store_name", "full_date", "daily_sales", "running_total"]
+  },
+  {
+    "id": "ent_window_moving_average",
+    "question": "Calculate 7-day moving average of sales for trend analysis",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH daily_sales AS (SELECT dd.full_date, SUM(sf.quantity * sf.unit_price) as sales FROM sales_fact sf JOIN dim_date dd ON sf.date_id = dd.date_id GROUP BY dd.full_date) SELECT full_date, sales, ROUND(AVG(sales) OVER (ORDER BY full_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 2) as moving_avg_7d, ROUND(AVG(sales) OVER (ORDER BY full_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW), 2) as moving_avg_30d FROM daily_sales ORDER BY full_date",
+    "tags": ["window", "moving_average", "time_series", "analytics"],
+    "schema_required": "enterprise",
+    "expected_columns": ["full_date", "sales", "moving_avg_7d", "moving_avg_30d"]
+  },
+  {
+    "id": "ent_window_lag_lead",
+    "question": "Compare each day's sales with previous and next day using LAG and LEAD",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH daily_sales AS (SELECT dd.full_date, SUM(sf.quantity * sf.unit_price) as sales FROM sales_fact sf JOIN dim_date dd ON sf.date_id = dd.date_id GROUP BY dd.full_date) SELECT full_date, sales, LAG(sales, 1) OVER (ORDER BY full_date) as prev_day_sales, LEAD(sales, 1) OVER (ORDER BY full_date) as next_day_sales, ROUND((sales - LAG(sales, 1) OVER (ORDER BY full_date)) * 100.0 / NULLIF(LAG(sales, 1) OVER (ORDER BY full_date), 0), 2) as day_over_day_pct FROM daily_sales ORDER BY full_date",
+    "tags": ["window", "lag", "lead", "time_series"],
+    "schema_required": "enterprise",
+    "expected_columns": ["full_date", "sales", "prev_day_sales", "next_day_sales", "day_over_day_pct"]
+  },
+  {
+    "id": "ent_window_ntile",
+    "question": "Segment customers into quartiles based on lifetime value using NTILE",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH customer_ltv AS (SELECT sf.customer_id, dc.customer_name, SUM(sf.quantity * sf.unit_price) as lifetime_value FROM sales_fact sf JOIN dim_customer dc ON sf.customer_id = dc.customer_id GROUP BY sf.customer_id, dc.customer_name) SELECT customer_id, customer_name, lifetime_value, NTILE(4) OVER (ORDER BY lifetime_value DESC) as ltv_quartile, CASE NTILE(4) OVER (ORDER BY lifetime_value DESC) WHEN 1 THEN 'Platinum' WHEN 2 THEN 'Gold' WHEN 3 THEN 'Silver' ELSE 'Bronze' END as tier FROM customer_ltv ORDER BY lifetime_value DESC",
+    "tags": ["window", "ntile", "segmentation", "ltv"],
+    "schema_required": "enterprise",
+    "expected_columns": ["customer_id", "customer_name", "lifetime_value", "ltv_quartile", "tier"]
+  },
+  {
+    "id": "ent_window_percent_rank",
+    "question": "Calculate percentile ranking of products by revenue",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH product_revenue AS (SELECT dp.product_id, dp.product_name, dp.category, SUM(sf.quantity * sf.unit_price) as revenue FROM sales_fact sf JOIN dim_product dp ON sf.product_id = dp.product_id GROUP BY dp.product_id, dp.product_name, dp.category) SELECT product_id, product_name, category, revenue, ROUND(PERCENT_RANK() OVER (ORDER BY revenue) * 100, 2) as percentile, ROUND(PERCENT_RANK() OVER (PARTITION BY category ORDER BY revenue) * 100, 2) as category_percentile FROM product_revenue ORDER BY revenue DESC",
+    "tags": ["window", "percent_rank", "percentile", "analytics"],
+    "schema_required": "enterprise",
+    "expected_columns": ["product_id", "product_name", "category", "revenue", "percentile", "category_percentile"]
+  },
+  {
+    "id": "ent_funnel_analysis",
+    "question": "Analyze conversion funnel: page views -> add to cart -> checkout -> purchase",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH funnel_stages AS (SELECT user_id, MAX(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) as viewed, MAX(CASE WHEN event_type = 'add_to_cart' THEN 1 ELSE 0 END) as added_to_cart, MAX(CASE WHEN event_type = 'checkout' THEN 1 ELSE 0 END) as checked_out, MAX(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) as purchased FROM user_events GROUP BY user_id) SELECT SUM(viewed) as page_views, SUM(added_to_cart) as cart_adds, SUM(checked_out) as checkouts, SUM(purchased) as purchases, ROUND(SUM(added_to_cart) * 100.0 / NULLIF(SUM(viewed), 0), 2) as view_to_cart_pct, ROUND(SUM(checked_out) * 100.0 / NULLIF(SUM(added_to_cart), 0), 2) as cart_to_checkout_pct, ROUND(SUM(purchased) * 100.0 / NULLIF(SUM(checked_out), 0), 2) as checkout_to_purchase_pct, ROUND(SUM(purchased) * 100.0 / NULLIF(SUM(viewed), 0), 2) as overall_conversion_pct FROM funnel_stages",
+    "tags": ["funnel", "conversion", "analytics", "marketing"],
+    "schema_required": "enterprise",
+    "expected_columns": ["page_views", "cart_adds", "checkouts", "purchases", "view_to_cart_pct", "cart_to_checkout_pct", "checkout_to_purchase_pct", "overall_conversion_pct"]
+  },
+  {
+    "id": "ent_sessionization",
+    "question": "Sessionize user events with 30-minute inactivity timeout",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH time_diffs AS (SELECT user_id, event_id, event_type, event_timestamp, LAG(event_timestamp) OVER (PARTITION BY user_id ORDER BY event_timestamp) as prev_timestamp, CASE WHEN (julianday(event_timestamp) - julianday(LAG(event_timestamp) OVER (PARTITION BY user_id ORDER BY event_timestamp))) * 24 * 60 > 30 OR LAG(event_timestamp) OVER (PARTITION BY user_id ORDER BY event_timestamp) IS NULL THEN 1 ELSE 0 END as new_session FROM user_events), sessions AS (SELECT *, SUM(new_session) OVER (PARTITION BY user_id ORDER BY event_timestamp) as session_id FROM time_diffs) SELECT user_id, session_id, MIN(event_timestamp) as session_start, MAX(event_timestamp) as session_end, COUNT(*) as events_in_session, ROUND((julianday(MAX(event_timestamp)) - julianday(MIN(event_timestamp))) * 24 * 60, 2) as session_duration_mins FROM sessions GROUP BY user_id, session_id ORDER BY user_id, session_id",
+    "tags": ["sessionization", "window", "analytics", "user_behavior"],
+    "schema_required": "enterprise",
+    "expected_columns": ["user_id", "session_id", "session_start", "session_end", "events_in_session", "session_duration_mins"]
+  },
+  {
+    "id": "ent_gap_islands",
+    "question": "Find gaps in sequential order numbers (missing orders)",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH order_sequence AS (SELECT order_id, LEAD(order_id) OVER (ORDER BY order_id) as next_order_id FROM orders_fact), gaps AS (SELECT order_id as gap_start, next_order_id as gap_end, next_order_id - order_id - 1 as gap_size FROM order_sequence WHERE next_order_id - order_id > 1) SELECT gap_start + 1 as missing_from, gap_end - 1 as missing_to, gap_size as missing_count FROM gaps ORDER BY gap_start",
+    "tags": ["gaps_islands", "sequence", "data_quality", "window"],
+    "schema_required": "enterprise",
+    "expected_columns": ["missing_from", "missing_to", "missing_count"]
+  },
+  {
+    "id": "ent_consecutive_days",
+    "question": "Find customers with consecutive days of purchases (streak analysis)",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH daily_purchases AS (SELECT DISTINCT customer_id, DATE(order_date) as purchase_date FROM orders_fact), date_groups AS (SELECT customer_id, purchase_date, DATE(purchase_date, '-' || ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY purchase_date) || ' days') as grp FROM daily_purchases), streaks AS (SELECT customer_id, MIN(purchase_date) as streak_start, MAX(purchase_date) as streak_end, COUNT(*) as streak_length FROM date_groups GROUP BY customer_id, grp) SELECT dc.customer_name, s.streak_start, s.streak_end, s.streak_length FROM streaks s JOIN dim_customer dc ON s.customer_id = dc.customer_id WHERE s.streak_length >= 3 ORDER BY s.streak_length DESC, s.streak_start",
+    "tags": ["gaps_islands", "streak", "consecutive", "window"],
+    "schema_required": "enterprise",
+    "expected_columns": ["customer_name", "streak_start", "streak_end", "streak_length"]
+  },
+  {
+    "id": "ent_multi_tenant",
+    "question": "Query sales data with multi-tenant isolation (tenant-specific aggregations)",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH tenant_sales AS (SELECT t.tenant_id, t.tenant_name, dp.category, SUM(sf.quantity * sf.unit_price) as total_sales, COUNT(DISTINCT sf.customer_id) as unique_customers, COUNT(DISTINCT sf.transaction_id) as total_transactions FROM sales_fact sf JOIN tenants t ON sf.tenant_id = t.tenant_id JOIN dim_product dp ON sf.product_id = dp.product_id GROUP BY t.tenant_id, t.tenant_name, dp.category) SELECT tenant_name, category, total_sales, unique_customers, total_transactions, ROUND(total_sales * 100.0 / SUM(total_sales) OVER (PARTITION BY tenant_id), 2) as pct_of_tenant_sales, RANK() OVER (PARTITION BY tenant_id ORDER BY total_sales DESC) as category_rank FROM tenant_sales ORDER BY tenant_id, total_sales DESC",
+    "tags": ["multi_tenant", "isolation", "saas", "aggregation"],
+    "schema_required": "enterprise",
+    "expected_columns": ["tenant_name", "category", "total_sales", "unique_customers", "total_transactions", "pct_of_tenant_sales", "category_rank"]
+  },
+  {
+    "id": "ent_recursive_hierarchy",
+    "question": "Traverse organizational hierarchy using recursive CTE",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH RECURSIVE org_tree AS (SELECT employee_id, employee_name, manager_id, title, 1 as level, employee_name as path FROM employees WHERE manager_id IS NULL UNION ALL SELECT e.employee_id, e.employee_name, e.manager_id, e.title, ot.level + 1, ot.path || ' > ' || e.employee_name FROM employees e JOIN org_tree ot ON e.manager_id = ot.employee_id) SELECT employee_id, employee_name, title, level, path, (SELECT COUNT(*) FROM employees WHERE manager_id = org_tree.employee_id) as direct_reports FROM org_tree ORDER BY path",
+    "tags": ["recursive", "cte", "hierarchy", "tree"],
+    "schema_required": "enterprise",
+    "expected_columns": ["employee_id", "employee_name", "title", "level", "path", "direct_reports"]
+  },
+  {
+    "id": "ent_recursive_bom",
+    "question": "Calculate total cost of a product using Bill of Materials (BOM) explosion",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH RECURSIVE bom_explosion AS (SELECT parent_product_id, component_id, quantity, 1 as level FROM bill_of_materials WHERE parent_product_id = 'PROD001' UNION ALL SELECT bom.parent_product_id, bom.component_id, bom.quantity * be.quantity, be.level + 1 FROM bill_of_materials bom JOIN bom_explosion be ON bom.parent_product_id = be.component_id WHERE be.level < 10) SELECT be.component_id, dp.product_name, SUM(be.quantity) as total_quantity, dp.unit_cost, SUM(be.quantity) * dp.unit_cost as extended_cost FROM bom_explosion be JOIN dim_product dp ON be.component_id = dp.product_id GROUP BY be.component_id, dp.product_name, dp.unit_cost ORDER BY extended_cost DESC",
+    "tags": ["recursive", "cte", "bom", "manufacturing"],
+    "schema_required": "enterprise",
+    "expected_columns": ["component_id", "product_name", "total_quantity", "unit_cost", "extended_cost"]
+  },
+  {
+    "id": "ent_market_basket",
+    "question": "Market basket analysis: find products frequently bought together",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH transaction_products AS (SELECT transaction_id, product_id FROM sales_fact GROUP BY transaction_id, product_id), product_pairs AS (SELECT t1.product_id as product_a, t2.product_id as product_b, COUNT(DISTINCT t1.transaction_id) as times_bought_together FROM transaction_products t1 JOIN transaction_products t2 ON t1.transaction_id = t2.transaction_id AND t1.product_id < t2.product_id GROUP BY t1.product_id, t2.product_id), product_counts AS (SELECT product_id, COUNT(DISTINCT transaction_id) as times_bought FROM transaction_products GROUP BY product_id) SELECT dp1.product_name as product_a, dp2.product_name as product_b, pp.times_bought_together, ROUND(pp.times_bought_together * 100.0 / pc1.times_bought, 2) as pct_of_a_transactions, ROUND(pp.times_bought_together * 100.0 / pc2.times_bought, 2) as pct_of_b_transactions FROM product_pairs pp JOIN dim_product dp1 ON pp.product_a = dp1.product_id JOIN dim_product dp2 ON pp.product_b = dp2.product_id JOIN product_counts pc1 ON pp.product_a = pc1.product_id JOIN product_counts pc2 ON pp.product_b = pc2.product_id WHERE pp.times_bought_together >= 5 ORDER BY pp.times_bought_together DESC LIMIT 20",
+    "tags": ["market_basket", "association", "retail", "analytics"],
+    "schema_required": "enterprise",
+    "expected_columns": ["product_a", "product_b", "times_bought_together", "pct_of_a_transactions", "pct_of_b_transactions"]
+  },
+  {
+    "id": "ent_churn_prediction",
+    "question": "Identify customers at risk of churning based on declining purchase frequency",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH monthly_activity AS (SELECT customer_id, strftime('%Y-%m', order_date) as month, COUNT(*) as orders, SUM(total_amount) as revenue FROM orders_fact GROUP BY customer_id, strftime('%Y-%m', order_date)), customer_trends AS (SELECT customer_id, month, orders, revenue, LAG(orders, 1) OVER (PARTITION BY customer_id ORDER BY month) as prev_orders, LAG(orders, 2) OVER (PARTITION BY customer_id ORDER BY month) as prev2_orders, LAG(orders, 3) OVER (PARTITION BY customer_id ORDER BY month) as prev3_orders FROM monthly_activity), churn_risk AS (SELECT customer_id, MAX(month) as last_active_month, AVG(orders) as avg_monthly_orders, CASE WHEN MAX(month) < strftime('%Y-%m', 'now', '-2 months') THEN 'Churned' WHEN MAX(orders) < AVG(orders) * 0.5 THEN 'High Risk' WHEN MAX(orders) < AVG(orders) * 0.75 THEN 'Medium Risk' ELSE 'Low Risk' END as churn_status FROM customer_trends GROUP BY customer_id) SELECT dc.customer_name, cr.last_active_month, ROUND(cr.avg_monthly_orders, 2) as avg_monthly_orders, cr.churn_status FROM churn_risk cr JOIN dim_customer dc ON cr.customer_id = dc.customer_id WHERE cr.churn_status IN ('High Risk', 'Churned') ORDER BY cr.churn_status, cr.last_active_month",
+    "tags": ["churn", "prediction", "customer_analytics", "retention"],
+    "schema_required": "enterprise",
+    "expected_columns": ["customer_name", "last_active_month", "avg_monthly_orders", "churn_status"]
+  },
+  {
+    "id": "ent_inventory_abc",
+    "question": "ABC inventory classification based on revenue contribution (Pareto analysis)",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH product_revenue AS (SELECT dp.product_id, dp.product_name, SUM(sf.quantity * sf.unit_price) as revenue FROM sales_fact sf JOIN dim_product dp ON sf.product_id = dp.product_id GROUP BY dp.product_id, dp.product_name), ranked_products AS (SELECT product_id, product_name, revenue, SUM(revenue) OVER (ORDER BY revenue DESC) as cumulative_revenue, SUM(revenue) OVER () as total_revenue FROM product_revenue) SELECT product_id, product_name, revenue, ROUND(revenue * 100.0 / total_revenue, 2) as pct_of_total, ROUND(cumulative_revenue * 100.0 / total_revenue, 2) as cumulative_pct, CASE WHEN cumulative_revenue <= total_revenue * 0.8 THEN 'A' WHEN cumulative_revenue <= total_revenue * 0.95 THEN 'B' ELSE 'C' END as abc_class FROM ranked_products ORDER BY revenue DESC",
+    "tags": ["abc_analysis", "inventory", "pareto", "classification"],
+    "schema_required": "enterprise",
+    "expected_columns": ["product_id", "product_name", "revenue", "pct_of_total", "cumulative_pct", "abc_class"]
+  },
+  {
+    "id": "ent_cohort_retention",
+    "question": "Calculate monthly retention rates by customer acquisition cohort",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH first_purchase AS (SELECT customer_id, MIN(DATE(order_date)) as cohort_date, strftime('%Y-%m', MIN(order_date)) as cohort_month FROM orders_fact GROUP BY customer_id), monthly_activity AS (SELECT o.customer_id, fp.cohort_month, strftime('%Y-%m', o.order_date) as activity_month, (strftime('%Y', o.order_date) - strftime('%Y', fp.cohort_date)) * 12 + (strftime('%m', o.order_date) - strftime('%m', fp.cohort_date)) as months_since_first FROM orders_fact o JOIN first_purchase fp ON o.customer_id = fp.customer_id), cohort_sizes AS (SELECT cohort_month, COUNT(DISTINCT customer_id) as cohort_size FROM first_purchase GROUP BY cohort_month), retention AS (SELECT ma.cohort_month, ma.months_since_first, COUNT(DISTINCT ma.customer_id) as active_customers FROM monthly_activity ma GROUP BY ma.cohort_month, ma.months_since_first) SELECT r.cohort_month, cs.cohort_size, r.months_since_first, r.active_customers, ROUND(r.active_customers * 100.0 / cs.cohort_size, 2) as retention_rate FROM retention r JOIN cohort_sizes cs ON r.cohort_month = cs.cohort_month WHERE r.months_since_first <= 12 ORDER BY r.cohort_month, r.months_since_first",
+    "tags": ["cohort", "retention", "customer_analytics", "growth"],
+    "schema_required": "enterprise",
+    "expected_columns": ["cohort_month", "cohort_size", "months_since_first", "active_customers", "retention_rate"]
+  },
+  {
+    "id": "ent_pivot_monthly_sales",
+    "question": "Pivot monthly sales data by category (columns for each month)",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "SELECT dp.category, SUM(CASE WHEN strftime('%m', dd.full_date) = '01' THEN sf.quantity * sf.unit_price ELSE 0 END) as jan_sales, SUM(CASE WHEN strftime('%m', dd.full_date) = '02' THEN sf.quantity * sf.unit_price ELSE 0 END) as feb_sales, SUM(CASE WHEN strftime('%m', dd.full_date) = '03' THEN sf.quantity * sf.unit_price ELSE 0 END) as mar_sales, SUM(CASE WHEN strftime('%m', dd.full_date) = '04' THEN sf.quantity * sf.unit_price ELSE 0 END) as apr_sales, SUM(CASE WHEN strftime('%m', dd.full_date) = '05' THEN sf.quantity * sf.unit_price ELSE 0 END) as may_sales, SUM(CASE WHEN strftime('%m', dd.full_date) = '06' THEN sf.quantity * sf.unit_price ELSE 0 END) as jun_sales, SUM(sf.quantity * sf.unit_price) as total_h1 FROM sales_fact sf JOIN dim_product dp ON sf.product_id = dp.product_id JOIN dim_date dd ON sf.date_id = dd.date_id WHERE dd.year = 2024 AND dd.month <= 6 GROUP BY dp.category ORDER BY total_h1 DESC",
+    "tags": ["pivot", "crosstab", "reporting", "aggregation"],
+    "schema_required": "enterprise",
+    "expected_columns": ["category", "jan_sales", "feb_sales", "mar_sales", "apr_sales", "may_sales", "jun_sales", "total_h1"]
+  },
+  {
+    "id": "ent_anomaly_detection",
+    "question": "Detect sales anomalies using statistical thresholds (3 standard deviations)",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH daily_sales AS (SELECT dd.full_date, SUM(sf.quantity * sf.unit_price) as sales FROM sales_fact sf JOIN dim_date dd ON sf.date_id = dd.date_id GROUP BY dd.full_date), stats AS (SELECT AVG(sales) as mean_sales, AVG(sales * sales) - AVG(sales) * AVG(sales) as variance FROM daily_sales), anomalies AS (SELECT ds.full_date, ds.sales, s.mean_sales, SQRT(s.variance) as std_dev, (ds.sales - s.mean_sales) / NULLIF(SQRT(s.variance), 0) as z_score FROM daily_sales ds CROSS JOIN stats s) SELECT full_date, ROUND(sales, 2) as sales, ROUND(mean_sales, 2) as mean_sales, ROUND(std_dev, 2) as std_dev, ROUND(z_score, 2) as z_score, CASE WHEN z_score > 3 THEN 'High Anomaly' WHEN z_score > 2 THEN 'Moderate High' WHEN z_score < -3 THEN 'Low Anomaly' WHEN z_score < -2 THEN 'Moderate Low' ELSE 'Normal' END as anomaly_type FROM anomalies WHERE ABS(z_score) > 2 ORDER BY ABS(z_score) DESC",
+    "tags": ["anomaly", "statistics", "data_quality", "monitoring"],
+    "schema_required": "enterprise",
+    "expected_columns": ["full_date", "sales", "mean_sales", "std_dev", "z_score", "anomaly_type"]
+  },
+  {
+    "id": "ent_data_quality_check",
+    "question": "Comprehensive data quality report: nulls, duplicates, orphans, and ranges",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH null_checks AS (SELECT 'orders_fact' as table_name, 'customer_id' as column_name, COUNT(*) as total_rows, SUM(CASE WHEN customer_id IS NULL THEN 1 ELSE 0 END) as null_count FROM orders_fact UNION ALL SELECT 'orders_fact', 'product_id', COUNT(*), SUM(CASE WHEN product_id IS NULL THEN 1 ELSE 0 END) FROM orders_fact UNION ALL SELECT 'orders_fact', 'total_amount', COUNT(*), SUM(CASE WHEN total_amount IS NULL THEN 1 ELSE 0 END) FROM orders_fact), orphan_checks AS (SELECT 'orders_fact' as table_name, 'customer_id' as fk_column, COUNT(*) as orphan_count FROM orders_fact o WHERE NOT EXISTS (SELECT 1 FROM dim_customer c WHERE o.customer_id = c.customer_id) UNION ALL SELECT 'orders_fact', 'product_id', COUNT(*) FROM orders_fact o WHERE NOT EXISTS (SELECT 1 FROM dim_product p WHERE o.product_id = p.product_id)), duplicate_checks AS (SELECT 'orders_fact' as table_name, 'order_id' as key_column, COUNT(*) - COUNT(DISTINCT order_id) as duplicate_count FROM orders_fact) SELECT 'Null Check' as check_type, table_name, column_name as detail, total_rows, null_count as issue_count, ROUND(null_count * 100.0 / total_rows, 2) as issue_pct FROM null_checks WHERE null_count > 0 UNION ALL SELECT 'Orphan Check', table_name, fk_column, NULL, orphan_count, NULL FROM orphan_checks WHERE orphan_count > 0 UNION ALL SELECT 'Duplicate Check', table_name, key_column, NULL, duplicate_count, NULL FROM duplicate_checks WHERE duplicate_count > 0 ORDER BY check_type, table_name",
+    "tags": ["data_quality", "validation", "etl", "monitoring"],
+    "schema_required": "enterprise",
+    "expected_columns": ["check_type", "table_name", "detail", "total_rows", "issue_count", "issue_pct"]
+  },
+  {
+    "id": "ent_late_arriving_facts",
+    "question": "Handle late-arriving facts: find and flag records loaded after expected time",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH expected_load AS (SELECT sf.transaction_id, sf.order_date, sf.load_timestamp, DATE(sf.order_date, '+1 day') as expected_load_date, CASE WHEN DATE(sf.load_timestamp) > DATE(sf.order_date, '+1 day') THEN 1 ELSE 0 END as is_late, julianday(sf.load_timestamp) - julianday(sf.order_date) as days_delay FROM sales_fact sf) SELECT strftime('%Y-%m', order_date) as order_month, COUNT(*) as total_records, SUM(is_late) as late_records, ROUND(SUM(is_late) * 100.0 / COUNT(*), 2) as late_pct, ROUND(AVG(CASE WHEN is_late = 1 THEN days_delay ELSE NULL END), 2) as avg_delay_days, MAX(CASE WHEN is_late = 1 THEN days_delay ELSE NULL END) as max_delay_days FROM expected_load GROUP BY strftime('%Y-%m', order_date) ORDER BY order_month",
+    "tags": ["etl", "data_quality", "late_arriving", "monitoring"],
+    "schema_required": "enterprise",
+    "expected_columns": ["order_month", "total_records", "late_records", "late_pct", "avg_delay_days", "max_delay_days"]
+  },
+  {
+    "id": "ent_slowly_changing_merge",
+    "question": "Simulate SCD Type 2 merge operation for dimension update",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH current_records AS (SELECT * FROM dim_customer_scd WHERE is_current = 1), staged_updates AS (SELECT * FROM staging_customer), changes AS (SELECT s.customer_id, s.customer_name, s.email, s.segment, c.customer_name as old_name, c.segment as old_segment, CASE WHEN c.customer_id IS NULL THEN 'INSERT' WHEN s.customer_name != c.customer_name OR s.segment != c.segment THEN 'UPDATE' ELSE 'NO_CHANGE' END as change_type FROM staged_updates s LEFT JOIN current_records c ON s.customer_id = c.customer_id) SELECT change_type, COUNT(*) as record_count, GROUP_CONCAT(customer_id) as affected_customers FROM changes GROUP BY change_type ORDER BY CASE change_type WHEN 'INSERT' THEN 1 WHEN 'UPDATE' THEN 2 ELSE 3 END",
+    "tags": ["scd", "merge", "etl", "dimension"],
+    "schema_required": "enterprise",
+    "expected_columns": ["change_type", "record_count", "affected_customers"]
+  },
+  {
+    "id": "ent_financial_reporting",
+    "question": "Generate financial summary with period comparisons and variances",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH period_totals AS (SELECT strftime('%Y', order_date) as year, strftime('%m', order_date) as month, SUM(total_amount) as revenue, SUM(cost_amount) as cost, SUM(total_amount) - SUM(cost_amount) as gross_profit, COUNT(DISTINCT order_id) as transactions, COUNT(DISTINCT customer_id) as unique_customers FROM orders_fact GROUP BY strftime('%Y', order_date), strftime('%m', order_date)) SELECT curr.year, curr.month, curr.revenue, prev.revenue as prev_month_revenue, ROUND((curr.revenue - COALESCE(prev.revenue, 0)) * 100.0 / NULLIF(prev.revenue, 0), 2) as revenue_growth_pct, curr.gross_profit, ROUND(curr.gross_profit * 100.0 / curr.revenue, 2) as gross_margin_pct, curr.transactions, ROUND(curr.revenue / curr.transactions, 2) as avg_transaction_value, curr.unique_customers FROM period_totals curr LEFT JOIN period_totals prev ON (curr.year = prev.year AND curr.month = printf('%02d', CAST(prev.month AS INTEGER) + 1)) OR (curr.month = '01' AND prev.month = '12' AND curr.year = printf('%04d', CAST(prev.year AS INTEGER) + 1)) ORDER BY curr.year, curr.month",
+    "tags": ["financial", "reporting", "variance", "month_over_month"],
+    "schema_required": "enterprise",
+    "expected_columns": ["year", "month", "revenue", "prev_month_revenue", "revenue_growth_pct", "gross_profit", "gross_margin_pct", "transactions", "avg_transaction_value", "unique_customers"]
+  },
+  {
+    "id": "ent_customer_360",
+    "question": "Build a customer 360 view combining transactions, support, and engagement data",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH order_summary AS (SELECT customer_id, COUNT(*) as total_orders, SUM(total_amount) as lifetime_value, MIN(order_date) as first_order, MAX(order_date) as last_order, AVG(total_amount) as avg_order_value FROM orders_fact GROUP BY customer_id), support_summary AS (SELECT customer_id, COUNT(*) as total_tickets, SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open_tickets, AVG(resolution_hours) as avg_resolution_time FROM support_tickets GROUP BY customer_id), engagement_summary AS (SELECT customer_id, MAX(last_login) as last_login, SUM(page_views) as total_page_views, SUM(email_opens) as email_opens, SUM(email_clicks) as email_clicks FROM customer_engagement GROUP BY customer_id) SELECT dc.customer_id, dc.customer_name, dc.email, dc.segment, os.total_orders, os.lifetime_value, os.first_order, os.last_order, os.avg_order_value, COALESCE(ss.total_tickets, 0) as support_tickets, COALESCE(ss.open_tickets, 0) as open_tickets, ss.avg_resolution_time, es.last_login, COALESCE(es.total_page_views, 0) as page_views, ROUND(COALESCE(es.email_clicks, 0) * 100.0 / NULLIF(es.email_opens, 0), 2) as email_click_rate FROM dim_customer dc LEFT JOIN order_summary os ON dc.customer_id = os.customer_id LEFT JOIN support_summary ss ON dc.customer_id = ss.customer_id LEFT JOIN engagement_summary es ON dc.customer_id = es.customer_id ORDER BY os.lifetime_value DESC NULLS LAST",
+    "tags": ["customer_360", "integration", "analytics", "crm"],
+    "schema_required": "enterprise",
+    "expected_columns": ["customer_id", "customer_name", "email", "segment", "total_orders", "lifetime_value", "first_order", "last_order", "avg_order_value", "support_tickets", "open_tickets", "avg_resolution_time", "last_login", "page_views", "email_click_rate"]
+  },
+  {
+    "id": "ent_attribution_model",
+    "question": "Multi-touch attribution model for marketing channels",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH touchpoints AS (SELECT customer_id, order_id, channel, touch_timestamp, ROW_NUMBER() OVER (PARTITION BY customer_id, order_id ORDER BY touch_timestamp) as touch_order, COUNT(*) OVER (PARTITION BY customer_id, order_id) as total_touches FROM marketing_touches), attributed AS (SELECT t.customer_id, t.order_id, t.channel, t.touch_order, t.total_touches, o.total_amount, CASE WHEN t.touch_order = 1 THEN o.total_amount ELSE 0 END as first_touch_value, CASE WHEN t.touch_order = t.total_touches THEN o.total_amount ELSE 0 END as last_touch_value, o.total_amount * 1.0 / t.total_touches as linear_value, CASE WHEN t.touch_order = 1 THEN o.total_amount * 0.4 WHEN t.touch_order = t.total_touches THEN o.total_amount * 0.4 ELSE o.total_amount * 0.2 / (t.total_touches - 2) END as position_based_value FROM touchpoints t JOIN orders_fact o ON t.order_id = o.order_id) SELECT channel, COUNT(DISTINCT order_id) as conversions, SUM(first_touch_value) as first_touch_revenue, SUM(last_touch_value) as last_touch_revenue, SUM(linear_value) as linear_revenue, SUM(position_based_value) as position_based_revenue FROM attributed GROUP BY channel ORDER BY position_based_revenue DESC",
+    "tags": ["attribution", "marketing", "analytics", "multi_touch"],
+    "schema_required": "enterprise",
+    "expected_columns": ["channel", "conversions", "first_touch_revenue", "last_touch_revenue", "linear_revenue", "position_based_revenue"]
+  },
+  {
+    "id": "ent_inventory_forecast",
+    "question": "Inventory demand forecasting based on historical sales and seasonality",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "WITH daily_demand AS (SELECT product_id, DATE(order_date) as sale_date, SUM(quantity) as daily_quantity FROM sales_fact GROUP BY product_id, DATE(order_date)), product_stats AS (SELECT product_id, AVG(daily_quantity) as avg_daily_demand, AVG(daily_quantity * daily_quantity) - AVG(daily_quantity) * AVG(daily_quantity) as variance, COUNT(DISTINCT sale_date) as days_with_sales, (julianday(MAX(sale_date)) - julianday(MIN(sale_date))) as date_range FROM daily_demand GROUP BY product_id), safety_stock AS (SELECT ps.product_id, dp.product_name, ps.avg_daily_demand, SQRT(ps.variance) as std_dev, ps.days_with_sales, ROUND(ps.avg_daily_demand * 7, 0) as weekly_forecast, ROUND(1.65 * SQRT(ps.variance) * SQRT(7), 0) as safety_stock_7day, i.current_stock, ROUND((i.current_stock - 1.65 * SQRT(ps.variance) * SQRT(7)) / NULLIF(ps.avg_daily_demand, 0), 0) as days_of_supply FROM product_stats ps JOIN dim_product dp ON ps.product_id = dp.product_id LEFT JOIN inventory i ON ps.product_id = i.product_id) SELECT product_id, product_name, ROUND(avg_daily_demand, 2) as avg_daily_demand, weekly_forecast, safety_stock_7day, COALESCE(current_stock, 0) as current_stock, days_of_supply, CASE WHEN days_of_supply < 7 THEN 'Critical' WHEN days_of_supply < 14 THEN 'Low' WHEN days_of_supply < 30 THEN 'Adequate' ELSE 'Excess' END as stock_status FROM safety_stock ORDER BY days_of_supply NULLS FIRST",
+    "tags": ["inventory", "forecasting", "supply_chain", "statistics"],
+    "schema_required": "enterprise",
+    "expected_columns": ["product_id", "product_name", "avg_daily_demand", "weekly_forecast", "safety_stock_7day", "current_stock", "days_of_supply", "stock_status"]
+  },
+  {
+    "id": "ent_complex_join_10_tables",
+    "question": "Complex 10-table join for comprehensive order analysis",
+    "dialect": "sqlite",
+    "difficulty": "enterprise",
+    "gold_sql": "SELECT o.order_id, c.customer_name, c.segment as customer_segment, p.product_name, p.category as product_category, s.store_name, s.region as store_region, d.full_date as order_date, d.day_of_week, d.is_holiday, pr.promotion_name, pr.discount_pct, sh.carrier, sh.shipping_method, pay.payment_method, pay.payment_status, o.quantity, o.unit_price, o.quantity * o.unit_price as line_total, COALESCE(pr.discount_pct, 0) * o.quantity * o.unit_price / 100 as discount_amount FROM orders_fact o JOIN dim_customer c ON o.customer_id = c.customer_id JOIN dim_product p ON o.product_id = p.product_id JOIN dim_store s ON o.store_id = s.store_id JOIN dim_date d ON o.date_id = d.date_id LEFT JOIN dim_promotion pr ON o.promotion_id = pr.promotion_id LEFT JOIN shipping sh ON o.order_id = sh.order_id LEFT JOIN payments pay ON o.order_id = pay.order_id WHERE d.year = 2024 AND c.segment = 'Enterprise' ORDER BY o.order_id LIMIT 1000",
+    "tags": ["join", "complex", "star_schema", "multi_table"],
+    "schema_required": "enterprise",
+    "expected_columns": ["order_id", "customer_name", "customer_segment", "product_name", "product_category", "store_name", "store_region", "order_date", "day_of_week", "is_holiday", "promotion_name", "discount_pct", "carrier", "shipping_method", "payment_method", "payment_status", "quantity", "unit_price", "line_total", "discount_amount"]
+  }
+]

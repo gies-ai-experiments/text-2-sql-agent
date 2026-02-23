@@ -1,0 +1,29 @@
+# Environment and secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# Python
+*.pyc
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
+ENV/
+
+# Cursor/Claude project (local tooling — do not publish)
+.claude/
+
+# Nested git (eval was its own repo; we track as plain dirs)
+eval/.git/
+
+# Eval outputs (regeneratable)
+eval/results/
+
+# Local DBs
+agent/test.db
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
