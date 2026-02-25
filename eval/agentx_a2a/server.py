@@ -20,7 +20,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from functools import wraps
 
-from flask import Flask, request, jsonify, Response, g
+from flask import Flask, request, jsonify, Response, g, stream_with_context
 from flask_cors import CORS
 
 # Add src to path
@@ -512,6 +512,7 @@ def create_app(
                 "POST /evaluate/batch": "Evaluate multiple submissions",
                 "GET /leaderboard": "Get benchmark leaderboard",
                 "GET /agents/<agent_id>/results": "Get agent results",
+                "GET /query/stream": "Stream LangGraph agent execution (SSE)",
                 "GET /health": "Health check",
             },
         })
@@ -670,6 +671,225 @@ def create_app(
         executor = server._get_executor()
         return jsonify(executor.get_schema_info())
 
+    # =========================================================================
+    # SSE STREAMING ENDPOINT — LangGraph agent execution
+    # =========================================================================
+
+    @app.route("/query/stream", methods=["GET"])
+    def query_stream():
+        """
+        Stream LangGraph agent execution as Server-Sent Events.
+
+        Query params:
+            question (required): Natural language question
+            dialect (optional): SQL dialect, defaults to server dialect
+
+        SSE event types:
+            graph  — static node/edge structure (sent once at start)
+            step   — per-node completion update
+            done   — final results
+            error  — if something goes wrong
+        """
+        question = request.args.get("question")
+        if not question:
+            return jsonify({"error": "question query parameter is required"}), 400
+
+        req_dialect = request.args.get("dialect", server.dialect)
+
+        def _sse_event(event_type: str, data: dict) -> str:
+            """Format a single SSE event."""
+            payload = json.dumps(data, default=str)
+            return f"event: {event_type}\ndata: {payload}\n\n"
+
+        def _extract_node_output(node_name: str, update: dict) -> dict:
+            """Extract node-specific output for step events."""
+            if node_name == "schema_analyzer":
+                schema_text = update.get("schema_context", "")
+                truncated = schema_text[:500] + "..." if len(schema_text) > 500 else schema_text
+                return {"schema": truncated}
+
+            elif node_name == "planner":
+                return {"plan": update.get("plan", {})}
+
+            elif node_name == "query_generator":
+                # The queries list uses operator.add accumulation; grab the
+                # last entry which is the one just produced by this node.
+                queries = update.get("queries", [])
+                if queries:
+                    last_q = queries[-1]
+                    return {"sql": last_q.get("sql", ""), "task_id": last_q.get("id", "")}
+                return {"sql": "", "task_id": ""}
+
+            elif node_name == "executor_eval":
+                results = update.get("query_results", [])
+                if results:
+                    last_r = results[-1]
+                    data_preview = last_r.get("data", [])[:50]
+                    return {
+                        "score": last_r.get("score", 0.0),
+                        "status": last_r.get("status", "unknown"),
+                        "rows_returned": last_r.get("rows_returned", 0),
+                        "data": data_preview,
+                        "error": last_r.get("error", ""),
+                        "eval_report": last_r.get("eval_report", {}),
+                    }
+                return {}
+
+            elif node_name == "retry_handler":
+                return {
+                    "retry_count": update.get("retry_count", 0),
+                    "feedback": update.get("retry_feedback", ""),
+                }
+
+            elif node_name == "summarizer":
+                return {"answer": update.get("final_answer", "")}
+
+            else:
+                # Helper nodes: set_first_task, check_remaining, set_next_task
+                return {"hidden": True}
+
+        def generate():
+            import time as _time
+
+            # -- Add project root to sys.path so `agent` package is importable --
+            _project_root = os.path.join(os.path.dirname(__file__), "..", "..")
+            _project_root = os.path.normpath(_project_root)
+            if _project_root not in sys.path:
+                sys.path.insert(0, _project_root)
+
+            try:
+                from agent.graph import build_graph
+            except ImportError as exc:
+                yield _sse_event("error", {
+                    "message": f"Failed to import agent: {exc}",
+                })
+                return
+
+            # -- Build graph and emit static structure --
+            try:
+                graph = build_graph()
+            except Exception as exc:
+                yield _sse_event("error", {
+                    "message": f"Failed to build graph: {exc}",
+                })
+                return
+
+            graph_structure = {
+                "nodes": [
+                    "schema_analyzer", "planner", "set_first_task",
+                    "query_generator", "executor_eval", "retry_handler",
+                    "check_remaining", "set_next_task", "summarizer",
+                ],
+                "edges": [
+                    {"from": "__start__", "to": "schema_analyzer"},
+                    {"from": "schema_analyzer", "to": "planner"},
+                    {"from": "planner", "to": "set_first_task", "condition": "route_after_planner"},
+                    {"from": "set_first_task", "to": "query_generator"},
+                    {"from": "query_generator", "to": "executor_eval"},
+                    {"from": "executor_eval", "to": "check_remaining", "condition": "route_after_quality_gate"},
+                    {"from": "executor_eval", "to": "retry_handler", "condition": "route_after_quality_gate"},
+                    {"from": "retry_handler", "to": "query_generator"},
+                    {"from": "check_remaining", "to": "set_next_task", "condition": "route_after_remaining"},
+                    {"from": "check_remaining", "to": "summarizer", "condition": "route_after_remaining"},
+                    {"from": "set_next_task", "to": "query_generator"},
+                    {"from": "summarizer", "to": "__end__"},
+                ],
+            }
+            yield _sse_event("graph", graph_structure)
+
+            # -- Resolve db_path --
+            # Try to get the path from the eval server's executor adapter;
+            # fall back to :memory: which the agent's default config also uses.
+            try:
+                executor = server._get_executor()
+                db_path = getattr(executor.adapter, "db_path", ":memory:")
+            except Exception:
+                db_path = ":memory:"
+
+            # -- Build initial state --
+            initial_state = {
+                "question": question,
+                "dialect": req_dialect,
+                "db_path": db_path,
+                "schema_context": "",
+                "plan": {"plan_type": "single", "tasks": [], "confidence": 0.0},
+                "current_task": {"id": "", "description": "", "sql": "", "depends_on": []},
+                "queries": [],
+                "query_results": [],
+                "retry_count": 0,
+                "retry_feedback": "",
+                "final_answer": "",
+            }
+
+            # -- Stream graph execution --
+            total_start = _time.perf_counter()
+            last_event_time = total_start
+            all_queries = []
+            all_results = []
+            final_answer = ""
+
+            try:
+                for event in graph.stream(initial_state, stream_mode="updates"):
+                    now = _time.perf_counter()
+                    for node_name, update in event.items():
+                        # Duration since the previous event was yielded —
+                        # this is the wall-clock time the node spent executing
+                        # inside graph.stream() before yielding this update.
+                        node_duration = (now - last_event_time) * 1000
+
+                        if update:
+                            # Accumulate for the done event
+                            if "queries" in update:
+                                all_queries.extend(update["queries"])
+                            if "query_results" in update:
+                                all_results.extend(update["query_results"])
+                            if "final_answer" in update:
+                                final_answer = update["final_answer"]
+
+                        output = _extract_node_output(node_name, update or {})
+
+                        # Determine step status
+                        if node_name == "retry_handler":
+                            status = "retry"
+                        elif node_name == "executor_eval" and output.get("error"):
+                            status = "error"
+                        else:
+                            status = "completed"
+
+                        yield _sse_event("step", {
+                            "node": node_name,
+                            "status": status,
+                            "duration_ms": round(node_duration, 2),
+                            "output": output,
+                        })
+
+                    last_event_time = _time.perf_counter()
+
+            except Exception as exc:
+                yield _sse_event("error", {
+                    "message": f"Graph execution error: {exc}",
+                })
+                return
+
+            total_ms = (_time.perf_counter() - total_start) * 1000
+
+            yield _sse_event("done", {
+                "final_answer": final_answer,
+                "queries": all_queries,
+                "results": all_results,
+                "total_ms": round(total_ms, 2),
+            })
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+        )
+
     # Error handlers
     @app.errorhandler(400)
     def bad_request(e):
@@ -707,13 +927,14 @@ def main():
 ║              AgentX SQL Benchmark - A2A Server                   ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  Endpoints:                                                       ║
-║    GET  /info          - Benchmark information                   ║
+║    GET  /info            - Benchmark information                 ║
 ║    POST /agents/register - Register your agent                   ║
-║    POST /tasks         - Get evaluation tasks                    ║
-║    POST /evaluate      - Submit SQL for evaluation               ║
-║    POST /evaluate/batch - Batch evaluation                       ║
-║    GET  /leaderboard   - View leaderboard                        ║
-║    GET  /schema        - View database schema                    ║
+║    POST /tasks           - Get evaluation tasks                  ║
+║    POST /evaluate        - Submit SQL for evaluation             ║
+║    POST /evaluate/batch  - Batch evaluation                      ║
+║    GET  /leaderboard     - View leaderboard                      ║
+║    GET  /schema          - View database schema                  ║
+║    GET  /query/stream    - Stream agent execution (SSE)          ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  Server: http://{args.host}:{args.port}                              ║
 ║  Dialect: {args.dialect}                                              ║
