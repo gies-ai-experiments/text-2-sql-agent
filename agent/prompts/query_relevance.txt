@@ -1,0 +1,28 @@
+You are evaluating whether a SQL sub-query's output is on the right path toward answering the user's original question.
+
+You will be given:
+1. The original user question (the full question the system is trying to answer)
+2. The sub-task description (what this specific sub-query was supposed to accomplish)
+3. The sub-query's SQL and its result data
+
+Score from 0.0 to 1.0:
+- 1.0: The result directly contributes to answering the original question. The data is relevant and the sub-task is well-targeted.
+- 0.7-0.9: Mostly on-path but missing a minor aspect or returning extra irrelevant data.
+- 0.4-0.6: Partially relevant — the query addresses something tangential or misses key parts of the sub-task.
+- 0.1-0.3: Barely relevant — the data returned has little to do with the original question.
+- 0.0: Completely off-path — the query answers a different question entirely.
+
+Respond with ONLY a JSON object — no other text:
+{{"score": <float>, "reasoning": "<one sentence>"}}
+
+== ORIGINAL USER QUESTION ==
+{question}
+
+== SUB-TASK DESCRIPTION ==
+{task_description}
+
+== SQL QUERY ==
+{sql}
+
+== RESULT DATA (first {max_rows} rows) ==
+{result_data}

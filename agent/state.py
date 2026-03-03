@@ -42,3 +42,4 @@ class AgentState(TypedDict):
     retry_count: int
     retry_feedback: str
     final_answer: str
+    answer_relevance_score: float

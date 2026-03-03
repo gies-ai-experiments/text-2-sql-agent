@@ -23,8 +23,13 @@ from evaluation.enhanced_scorer import EnhancedScorer
 from evaluation.data_structures import ComparisonResult, AgentResult
 
 from agent.state import AgentState, QueryResult
+from agent.nodes.query_relevance import check_query_relevance
 
 logger = logging.getLogger(__name__)
+
+# Weight for blending relevance into the overall score.
+# overall_final = (1 - RELEVANCE_WEIGHT) * eval_score + RELEVANCE_WEIGHT * relevance_score
+RELEVANCE_WEIGHT = 0.15
 
 
 # ---------------------------------------------------------------------------
@@ -82,18 +87,44 @@ def executor_eval(state: AgentState) -> dict:
             dialect=dialect,
         )
 
-        # -- 4. Build QueryResult ----------------------------------------
-        # Use len(data) for rows_returned (safer than reaching into the
-        # internal .execution dict).  execution_time_ms still requires
-        # the internal dict — no public property exists on ExecutorResult.
+        # -- 4. Per-query relevance check ---------------------------------
         data = executor_result.data
+        relevance_score = 0.5  # default if check fails
+        relevance_reasoning = ""
+        try:
+            relevance_score, relevance_reasoning = check_query_relevance(
+                question=state.get("question", ""),
+                task_description=current_task.get("description", ""),
+                sql=sql,
+                data=data,
+            )
+        except Exception as rel_exc:
+            logger.warning("Relevance check failed: %s", rel_exc)
+
+        # Blend relevance into overall score
+        blended_score = (
+            (1 - RELEVANCE_WEIGHT) * score.overall
+            + RELEVANCE_WEIGHT * relevance_score
+        )
+
+        # Include relevance in the eval report
+        eval_dict = score.to_dict()
+        eval_dict["relevance"] = {
+            "score": relevance_score,
+            "reasoning": relevance_reasoning,
+            "weight": RELEVANCE_WEIGHT,
+        }
+        eval_dict["overall_before_relevance"] = score.overall
+        eval_dict["overall"] = round(blended_score, 4)
+
+        # -- 5. Build QueryResult ----------------------------------------
         result = QueryResult(
             task_id=current_task["id"],
             data=data,
             rows_returned=len(data),
             execution_time_ms=executor_result.execution.get("execution_time_ms", 0.0),
-            score=score.overall,
-            eval_report=score.to_dict(),
+            score=blended_score,
+            eval_report=eval_dict,
             status="success" if executor_result.success else "failed",
             error=executor_result.error or "",
         )

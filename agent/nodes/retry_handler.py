@@ -8,8 +8,9 @@ Failure categories are checked in priority order:
   1. Execution error (syntax error, runtime error from the DB)
   2. Hallucination (phantom tables or columns not in the schema)
   3. Safety violation (non-SELECT statement detected)
-  4. Empty results (query ran but returned 0 rows)
-  5. Generic low score (catch-all with score + threshold)
+  4. Relevance (query result is off-path from the user question)
+  5. Empty results (query ran but returned 0 rows)
+  6. Generic low score (catch-all with score + threshold)
 
 No LLM call is made here — this is pure deterministic categorization.
 """
@@ -88,8 +89,23 @@ def _check_safety(eval_report: dict) -> str | None:
     return None
 
 
+def _check_relevance(eval_report: dict) -> str | None:
+    """Priority 4: Check if the query result is off-path from the user question."""
+    relevance = eval_report.get("relevance", {})
+    relevance_score = relevance.get("score", 1.0)
+    if relevance_score < 0.5:
+        reasoning = relevance.get("reasoning", "")
+        return (
+            f"Query result is not relevant to the original question "
+            f"(relevance score: {relevance_score:.2f}).\n"
+            f"Issue: {reasoning}\n"
+            f"Rewrite the query to directly address what was asked."
+        )
+    return None
+
+
 def _check_empty_results(result: dict) -> str | None:
-    """Priority 4: Check for queries that executed but returned no rows."""
+    """Priority 5: Check for queries that executed but returned no rows."""
     rows_returned = result.get("rows_returned", 0)
     status = result.get("status", "")
     if rows_returned == 0 and status == "success":
@@ -104,7 +120,7 @@ def _check_empty_results(result: dict) -> str | None:
 def _build_generic_feedback(eval_report: dict) -> str:
     """Priority 5: Generic low-score feedback (catch-all)."""
     overall = eval_report.get("overall", 0.0)
-
+    
     parts = [
         f"Query scored {overall:.2f}, below the required threshold "
         f"of {SCORE_THRESHOLD:.2f}."
@@ -155,6 +171,7 @@ def retry_handler(state: AgentState) -> dict:
         _check_execution_error(result, eval_report)
         or _check_hallucination(eval_report)
         or _check_safety(eval_report)
+        or _check_relevance(eval_report)
         or _check_empty_results(result)
         or _build_generic_feedback(eval_report)
     )

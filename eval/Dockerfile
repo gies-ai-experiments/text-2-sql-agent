@@ -41,7 +41,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY src/ ./src/
 COPY evaluation/ ./evaluation/
-COPY a2a/ ./a2a/
+COPY agentx_a2a/ ./agentx_a2a/
 COPY tasks/ ./tasks/
 COPY run_evaluation_pipeline.py .
 COPY test_*.py ./
@@ -60,4 +60,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:${PORT}/health').raise_for_status()" || exit 1
 
 # Default command: Start A2A server
-CMD ["python", "-m", "a2a.server"]
+CMD ["python", "-m", "agentx_a2a.server"]

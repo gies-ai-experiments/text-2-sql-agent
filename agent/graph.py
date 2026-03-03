@@ -38,6 +38,7 @@ from agent.nodes.query_generator import query_generator
 from agent.nodes.executor_eval import executor_eval
 from agent.nodes.retry_handler import retry_handler
 from agent.nodes.summarizer import summarizer
+# answer_judge removed — relevance is now checked per-query inside executor_eval
 
 
 # ---------------------------------------------------------------------------

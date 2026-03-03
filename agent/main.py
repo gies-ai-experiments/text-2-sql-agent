@@ -155,6 +155,7 @@ def main() -> None:
         "retry_count": 0,
         "retry_feedback": "",
         "final_answer": "",
+        "answer_relevance_score": 0.0,
     }
 
     graph = build_graph()
@@ -164,6 +165,8 @@ def main() -> None:
     # Accumulate results across all events for final display
     all_query_results: list[dict] = []
     all_queries: list[dict] = []
+    final_answer = "(no answer produced)"
+    relevance_score = None
 
     for event in graph.stream(initial_state, stream_mode="updates"):
         for node_name, update in event.items():
@@ -173,6 +176,10 @@ def main() -> None:
                     all_query_results.extend(update["query_results"])
                 if "queries" in update:
                     all_queries.extend(update["queries"])
+                if "final_answer" in update:
+                    final_answer = update["final_answer"]
+                if "answer_relevance_score" in update:
+                    relevance_score = update["answer_relevance_score"]
 
             if args.verbose:
                 print(f"\n[{node_name}] ->")
@@ -197,12 +204,9 @@ def main() -> None:
 
     # -- Final Answer --
     print("\n" + "=" * 60)
-    if "summarizer" in event:
-        final_answer = event["summarizer"].get("final_answer", "")
-    else:
-        final_answer = "(no answer produced)"
-
     print(f"\nAnswer:\n{final_answer}")
+    if relevance_score is not None:
+        print(f"\nAnswer Relevance Score: {relevance_score:.2f}")
     print(f"\nElapsed: {elapsed:.2f}s")
 
 

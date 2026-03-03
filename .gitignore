@@ -13,6 +13,7 @@ ENV/
 
 # Cursor/Claude project (local tooling — do not publish)
 .claude/
+.claude-repo-sync/
 
 # Nested git (eval was its own repo; we track as plain dirs)
 eval/.git/

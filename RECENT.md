@@ -33,6 +33,25 @@ This file tracks recent Claude activity and performance on this project.
 
 ---
 
+## 2026-02-22 — Push to GitHub
+
+**Accomplished:**
+- Pushed `agent/` and `eval/` to https://github.com/gies-ai-experiments/text-2-sql-agent (branch `main`).
+- Hardened root `.gitignore` per gitpush skill: `.env`, `.env.*` (allow `.env.example`), `.claude/`, `eval/.git/`, `eval/results/`, `agent/test.db`, venv/pytest cache, IDE/OS cruft.
+- Removed nested `eval/.git` so eval is tracked as normal files (single repo, not submodule).
+- Added root `README.md` for first push; excluded `agent/test.db` from commit.
+
+**Not pushed (by design):**
+- `agent/.env` (secrets)
+- `.claude/` (local tooling)
+- `eval/results/` (regeneratable)
+- `agent/test.db` (local DB)
+
+**State of the codebase:**
+- Repo is a single root git with `agent/` and `eval/`; `main` tracks `origin` at gies-ai-experiments/text-2-sql-agent.
+
+---
+
 <!-- Template for future entries:
 
 ## YYYY-MM-DD — [Session title]
