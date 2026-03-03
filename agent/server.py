@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import queue as thread_queue
 import sqlite3
 import time
 from pathlib import Path
@@ -224,65 +225,80 @@ def _extract_answer_event(update: dict) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
+_SENTINEL = object()  # signals the sync thread is done
+
+
 async def _stream_agent(question: str, db_path: str) -> AsyncGenerator[str, None]:
     """Async generator that runs the LangGraph agent and yields SSE events.
 
     The LangGraph graph.stream() is synchronous, so we run it in a thread
-    pool executor to avoid blocking the async event loop.
+    pool executor.  Events are pushed into a thread-safe queue as each graph
+    node completes, so the SSE connection sends data incrementally instead of
+    waiting for the full run to finish.
     """
     start = time.perf_counter()
+    q: thread_queue.Queue = thread_queue.Queue()
 
-    # Accumulated state for cross-event lookups
+    # Accumulated state for cross-event lookups (only accessed by the sync
+    # thread inside _run_sync, so no concurrent-access issues).
     accumulated_queries: list[dict] = []
 
-    def _run_sync():
-        """Run the synchronous graph.stream() and collect all events."""
-        graph = build_graph()
-        initial_state = _build_initial_state(question, db_path)
-        events = []
-        for event in graph.stream(initial_state, stream_mode="updates"):
-            events.append(event)
-        return events
-
-    try:
-        # Run blocking graph in thread pool
-        events = await asyncio.to_thread(_run_sync)
-    except Exception as exc:
-        logger.exception("Agent execution failed: %s", exc)
-        yield json.dumps(_sse_event("error", data={"message": str(exc)}))
-        return
-
-    # Process collected events and yield SSE data
-    for event in events:
+    def _process_graph_event(event: dict) -> list[str]:
+        """Turn a single LangGraph stream event into SSE JSON strings."""
+        sse_events: list[str] = []
         for node_name, update in event.items():
             if not update:
-                # Still emit a node-done event for passthrough nodes
-                yield json.dumps(_sse_event("node", node=node_name, status="done"))
+                sse_events.append(
+                    json.dumps(_sse_event("node", node=node_name, status="done"))
+                )
                 continue
 
-            # Accumulate queries for SQL lookup in query_result events
             if "queries" in update:
                 accumulated_queries.extend(update["queries"])
 
-            # -- Node completion event --
-            yield json.dumps(_sse_event("node", node=node_name, status="done"))
+            sse_events.append(
+                json.dumps(_sse_event("node", node=node_name, status="done"))
+            )
 
-            # -- Plan event (from planner node) --
             if node_name == "planner":
                 plan_event = _extract_plan_event(update)
                 if plan_event:
-                    yield json.dumps(plan_event)
+                    sse_events.append(json.dumps(plan_event))
 
-            # -- Query result events (from executor_eval node) --
             if node_name == "executor_eval":
                 for qr_event in _extract_query_result_events(update, accumulated_queries):
-                    yield json.dumps(qr_event)
+                    sse_events.append(json.dumps(qr_event))
 
-            # -- Answer event (from summarizer node) --
             if node_name == "summarizer":
                 answer_event = _extract_answer_event(update)
                 if answer_event:
-                    yield json.dumps(answer_event)
+                    sse_events.append(json.dumps(answer_event))
+
+        return sse_events
+
+    def _run_sync() -> None:
+        """Run the synchronous graph and push SSE strings into the queue."""
+        try:
+            graph = build_graph()
+            initial_state = _build_initial_state(question, db_path)
+            for event in graph.stream(initial_state, stream_mode="updates"):
+                for sse_str in _process_graph_event(event):
+                    q.put(sse_str)
+        except Exception as exc:
+            logger.exception("Agent execution failed: %s", exc)
+            q.put(json.dumps(_sse_event("error", data={"message": str(exc)})))
+        finally:
+            q.put(_SENTINEL)
+
+    # Launch the blocking graph in a background thread
+    asyncio.get_running_loop().run_in_executor(None, _run_sync)
+
+    # Yield SSE strings as they arrive — await in thread so we don't block
+    while True:
+        item = await asyncio.to_thread(q.get)
+        if item is _SENTINEL:
+            break
+        yield item
 
     elapsed = round(time.perf_counter() - start, 2)
     yield json.dumps(_sse_event("done", data={"elapsed": elapsed}))
@@ -359,7 +375,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "agent.server:app",
         host="0.0.0.0",
-        port=8000,
+        port=8001,
         reload=True,
         log_level="info",
     )

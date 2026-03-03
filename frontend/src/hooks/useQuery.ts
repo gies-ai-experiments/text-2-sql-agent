@@ -52,9 +52,28 @@ async function readSSEStream(
       if (signal.aborted) break;
 
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        // Process any remaining buffer when stream ends
+        if (buffer.trim()) {
+          for (const line of buffer.split('\n')) {
+            const trimmedLine = line.replace(/\r$/, '').trim();
+            if (trimmedLine.startsWith('data:')) {
+              const jsonStr = trimmedLine.slice(5).trim();
+              if (jsonStr) {
+                try {
+                  onEvent(JSON.parse(jsonStr));
+                } catch { /* skip malformed JSON */ }
+              }
+            }
+          }
+        }
+        break;
+      }
 
       buffer += decoder.decode(value, { stream: true });
+
+      // Normalize \r\n to \n (servers vary in line endings)
+      buffer = buffer.replace(/\r\n/g, '\n');
 
       // SSE events are separated by double newlines
       const parts = buffer.split('\n\n');
